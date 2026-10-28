@@ -10,7 +10,7 @@ export const env = {
   DB_PORT: Number(process.env.DB_PORT ?? 5432),
   DB_USER: process.env.DB_USER ?? 'postgres',
   DB_PASSWORD: process.env.DB_PASSWORD ?? '',
-  DB_NAME: process.env.DB_NAME ?? 'express_app',
+  DB_NAME: process.env.DB_NAME ?? 'student_app',
 };
 
 export const isProduction = env.NODE_ENV === 'production';
