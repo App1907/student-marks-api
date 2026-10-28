@@ -1,64 +1,217 @@
-# Express + TypeScript API
+# Student & Marks API
 
-A simple Express 5 API made of routes, middleware, centralised error handling, controllers, services and DTOs, backed by PostgreSQL (`pg`).
+Express 5 + TypeScript API for **Student CRUD**, **Marks CRUD**, and **subject-wise averages**, built on the existing layered architecture (routes → controllers → services → repositories → PostgreSQL).
 
-## Run
+## Quick start (database + server)
+
+### 1. Prerequisites
+
+- Node.js **≥ 20**
+- PostgreSQL running locally (Homebrew / Postgres.app / Docker)
+
+### 2. Configure environment
 
 ```bash
-cp .env.example .env      # then set DB_USER / DB_PASSWORD for your local Postgres
-npm install
-createdb express_app      # create the local database
-npm run db:migrate        # create the users table from db/schema.sql
-npm run dev        # tsx watch on http://localhost:3000
-npm run build && npm start
+cp .env.example .env
 ```
 
-## Structure
+Edit `.env` for your machine. On Homebrew Postgres the macOS username often works with an empty password:
+
+```env
+NODE_ENV=local
+PORT=3000
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=user          # your macOS / Postgres role
+DB_PASSWORD=          # empty for peer/trust auth
+DB_NAME=student_app
+```
+
+### 3. Create the database
+
+```bash
+# Homebrew Postgres (no password)
+createdb student_app
+
+# Or via psql
+psql -U postgres -c "CREATE DATABASE student_app;"
+```
+
+### 4. Install, migrate, run
+
+```bash
+npm install
+npm run db:migrate    # applies db/schema.sql (users, students, marks)
+npm run dev           # http://localhost:3000
+```
+
+| URL | Purpose |
+|-----|---------|
+| http://localhost:3000/api/health | Liveness |
+| http://localhost:3000/api/docs | Swagger UI |
+
+Production build:
+
+```bash
+npm run build && npm start
+npm run typecheck
+```
+
+### Database connection troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `connection refused` / `pg_isready` fails | Start Postgres: `brew services start postgresql@18` (or your version) |
+| `role "postgres" does not exist` | Set `DB_USER` to your macOS username (`whoami`) |
+| `password authentication failed` | Set `DB_PASSWORD`, or use trust/peer for local |
+| `database "student_app" does not exist` | Run `createdb student_app` |
+| `relation "students" does not exist` | Run `npm run db:migrate` |
+
+Verify connectivity:
+
+```bash
+pg_isready -h localhost
+psql -U "$DB_USER" -d student_app -c "SELECT 1;"
+```
+
+---
+
+## Project structure
 
 ```
 src/
-├── server.ts                 # starts the HTTP server
-├── app.ts                    # middleware order + routers + error handlers
-├── config/env.ts             # env vars from .env
-├── config/db.ts              # pg connection pool + connectDB()
-├── routes/index.ts           # root router: mounts each module
+├── server.ts
+├── app.ts                      # middleware order + Swagger + routers
+├── config/env.ts               # .env
+├── config/db.ts                # pg pool + connectDB()
+├── docs/swagger.ts             # OpenAPI + Swagger UI at /api/docs
+├── routes/index.ts             # mounts /users, /students, /marks
 ├── modules/
-│   └── user/                 # one folder per feature
-│       ├── user.controller.ts # router + handlers (HTTP in/out)
-│       ├── user.service.ts   # business logic + SQL queries via the pg pool
-│       ├── user.interface.ts # TypeScript interfaces for the module
-│       └── user.dto.ts       # zod request schemas + response types
-├── middlewares/
-│   ├── requestLogger.ts      # logs method, url, status, duration
-│   ├── validate.ts           # validates req.body against a DTO schema
-│   ├── notFound.ts           # 404 for unmatched routes
-│   └── errorHandler.ts       # turns every error into a JSON response
-└── errors/AppError.ts        # typed errors (400/404/409)
-db/schema.sql                 # table definitions, applied by npm run db:migrate
-scripts/migrate.ts            # runs schema.sql using the .env connection
+│   ├── user/                   # existing reference module
+│   ├── student/                # controller → service → repository
+│   └── mark/                   # controller → service → repository
+├── middlewares/                # requestLogger, validate, notFound, errorHandler
+└── errors/AppError.ts
+db/schema.sql                   # users, students, marks (+ unique + cascade)
+scripts/migrate.ts
 ```
 
-## Request lifecycle
+**Layering:** controllers handle HTTP only; services enforce business rules; **only repositories** import `pool` and run SQL (student & mark modules).
 
-`requestLogger → express.json → controller route → validateBody → handler → service`
+**Cascade:** deleting a student removes their marks via `ON DELETE CASCADE`. Duplicate `(student_id, subject)` is blocked by a unique constraint and surfaced as HTTP 409.
 
-If anything throws, rejects or calls `next(err)`, Express skips straight to `errorHandler`. Unmatched routes hit `notFoundHandler`, which forwards a `NotFoundError` to the same handler.
+---
 
-## Endpoints
+## API overview
 
-| Method | Path                     |                                |
-|--------|--------------------------|--------------------------------|
-| GET    | /api/health              | liveness                       |
-| GET    | /api/users               | list                           |
-| GET    | /api/users/:id           | get one                        |
-| POST   | /api/users               | `{ "name", "email" }`          |
-| PATCH  | /api/users/:id           | partial update                 |
-| DELETE | /api/users/:id           | delete                         |
-| GET    | /api/demo/async-error    | async handler that rejects     |
+Base path: `/api`  
+Success envelope: `{ "success": true, "message": "...", "data": ... }`  
+Error envelope: `{ "success": false, "message": "...", "details": ... }`
 
-`GET /api/demo/async-error` returns a JSON 500 and the server keeps running. Express 5 sends rejected promises to the error handler, so controllers don't need `try/catch`.
+### Students
 
-## Adding a module
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/api/students` | 201 — create |
+| GET | `/api/students` | 200 — list |
+| GET | `/api/students/:studentId` | 200 / 404 |
+| PUT | `/api/students/:studentId` | 200 / 404 / 409 |
+| DELETE | `/api/students/:studentId` | **204** / 404 (cascades marks) |
+| GET | `/api/students/:studentId/marks` | optional — marks for one student |
 
-1. Create `src/modules/<name>/` with `<name>.controller.ts` (exports a Router), `<name>.service.ts`, `<name>.interface.ts` and `<name>.dto.ts`.
-2. Mount the router in `src/routes/index.ts`: `router.use('/<name>', <name>Controller)`.
+### Marks
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/api/marks` | 201 — create |
+| GET | `/api/marks` | 200 — optional `?studentId=&subject=` |
+| GET | `/api/marks/averages/subjects` | 200 — subject averages |
+| GET | `/api/marks/:markId` | 200 / 404 |
+| PUT | `/api/marks/:markId` | 200 / 404 / 409 |
+| DELETE | `/api/marks/:markId` | **204** / 404 |
+
+### Users (existing)
+
+`GET/POST /api/users`, `GET/PATCH/DELETE /api/users/:id` — unchanged.
+
+---
+
+## Example requests & responses
+
+### Create student
+
+```bash
+curl -s -X POST http://localhost:3000/api/students \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Asha Sharma","email":"asha@example.com"}'
+```
+
+```json
+{
+  "success": true,
+  "message": "Student created successfully",
+  "data": {
+    "id": 1,
+    "name": "Asha Sharma",
+    "email": "asha@example.com",
+    "createdAt": "2026-10-19T07:00:00.000Z",
+    "updatedAt": "2026-10-19T07:00:00.000Z"
+  }
+}
+```
+
+### Create mark
+
+```bash
+curl -s -X POST http://localhost:3000/api/marks \
+  -H 'Content-Type: application/json' \
+  -d '{"studentId":1,"subject":"Mathematics","marks":88}'
+```
+
+### Subject-wise averages
+
+Given Mathematics `80, 90, 70`, Science `75, 85`, English `60`:
+
+```bash
+curl -s http://localhost:3000/api/marks/averages/subjects
+```
+
+```json
+{
+  "success": true,
+  "message": "Subject averages fetched successfully",
+  "data": [
+    { "subject": "English", "averageMarks": 60.0, "totalRecords": 1 },
+    { "subject": "Mathematics", "averageMarks": 80.0, "totalRecords": 3 },
+    { "subject": "Science", "averageMarks": 80.0, "totalRecords": 2 }
+  ]
+}
+```
+
+Empty marks table → `"data": []`. Missing marks are **not** counted as zero.
+
+### Edge cases (handled)
+
+| Case | Result |
+|------|--------|
+| Invalid / empty name, email, subject | 400 validation |
+| Marks outside 0–100 | 400 |
+| Duplicate student email | 409 |
+| Duplicate student + subject mark | 409 |
+| Unknown student when creating/updating mark | 404 |
+| Unknown student / mark id | 404 |
+| Delete student | 204 + related marks removed |
+| Invalid JSON body | 400 |
+| Unmatched route | 404 via `notFound` |
+| Async throw in handler | 500 via `errorHandler` (Express 5) |
+
+---
+
+## Design decisions
+
+1. **Repositories for student/mark** — SQL stays out of controllers/services; matches the assignment rule while keeping the existing user module intact.
+2. **Unique `(student_id, subject)` + service checks** — DB constraint is the source of truth; service maps `23505` → 409.
+3. **`ON DELETE CASCADE`** — no orphaned marks after student deletion.
+4. **Averages in SQL** — `ROUND(AVG(marks), 2)` grouped by subject; no phantom zeros.
+5. **Swagger at `/api/docs`** — interactive docs without changing the core middleware order.
+6. **PUT for student/mark updates** — full replace of required fields, as specified (user module still uses PATCH).
