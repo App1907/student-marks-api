@@ -38,17 +38,16 @@ export const markIdParamDto = z.object({
 });
 export type MarkIdParamDto = z.infer<typeof markIdParamDto>;
 
-export const listMarksQueryDto = z
-  .object({
-    studentId: z
-      .string()
-      .regex(/^\d+$/, 'studentId must be a positive integer')
-      .transform((value) => Number(value))
-      .refine((value) => Number.isInteger(value) && value > 0, 'studentId must be a positive integer')
-      .optional(),
-    subject: z.string().trim().min(1).max(100).optional(),
-  })
-  .strict();
+/** Query filters — unknown keys are ignored (not .strict) so clients can pass extra params. */
+export const listMarksQueryDto = z.object({
+  studentId: z
+    .string()
+    .regex(/^\d+$/, 'studentId must be a positive integer')
+    .transform((value) => Number(value))
+    .refine((value) => Number.isInteger(value) && value > 0, 'studentId must be a positive integer')
+    .optional(),
+  subject: z.string().trim().min(1).max(100).optional(),
+});
 export type ListMarksQueryDto = z.infer<typeof listMarksQueryDto>;
 
 /* ---------- Response DTOs ---------- */

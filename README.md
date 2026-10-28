@@ -168,6 +168,21 @@ curl -s -X POST http://localhost:3000/api/marks \
   -d '{"studentId":1,"subject":"Mathematics","marks":88}'
 ```
 
+```json
+{
+  "success": true,
+  "message": "Mark created successfully",
+  "data": {
+    "id": 1,
+    "studentId": 1,
+    "subject": "Mathematics",
+    "marks": 88,
+    "createdAt": "2026-10-19T07:00:00.000Z",
+    "updatedAt": "2026-10-19T07:00:00.000Z"
+  }
+}
+```
+
 ### Subject-wise averages
 
 Given Mathematics `80, 90, 70`, Science `75, 85`, English `60`:
@@ -197,8 +212,9 @@ Empty marks table → `"data": []`. Missing marks are **not** counted as zero.
 | Invalid / empty name, email, subject | 400 validation |
 | Marks outside 0–100 | 400 |
 | Duplicate student email | 409 |
-| Duplicate student + subject mark | 409 |
+| Duplicate student + subject mark (incl. different casing) | 409 |
 | Unknown student when creating/updating mark | 404 |
+| Extra unknown fields on create/update body | 400 (strict DTO) |
 | Unknown student / mark id | 404 |
 | Delete student | 204 + related marks removed |
 | Invalid JSON body | 400 |

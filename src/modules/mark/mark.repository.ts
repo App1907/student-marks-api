@@ -75,12 +75,12 @@ export const remove = async (id: number): Promise<boolean> => {
 export const getSubjectAverages = async (): Promise<SubjectAverageRow[]> => {
   const { rows } = await pool.query<SubjectAverageRow>(
     `SELECT
-       subject,
+       MIN(subject) AS subject,
        ROUND(AVG(marks)::numeric, 2) AS average_marks,
        COUNT(*)::int AS total_records
      FROM marks
-     GROUP BY subject
-     ORDER BY subject ASC`,
+     GROUP BY LOWER(subject)
+     ORDER BY MIN(subject) ASC`,
   );
   return rows;
 };
